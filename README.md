@@ -42,9 +42,12 @@ for both the NVRTC and the AOT (driver-only) binaries.
 - **1× throughput: parity** — CUDA is within ~2% of OpenCL, and the output is
   byte-identical. The AP26 sieve is compute/ALU-bound and both backends saturate
   the V100, so there is no headroom for CUDA to pull ahead.
-- **Multiple tasks per GPU (CUDA MPS): no benefit** (~0.83–0.92× aggregate at
-  2–3 concurrent tasks). Because AP26 already saturates the GPU solo, extra
-  concurrency only adds contention — the opposite of small-GFN workloads.
+- **Multiple tasks per GPU (CUDA MPS): a modest gain.** A full sweep
+  (concurrency 2–4 × MPS% 30–100) peaks at **+12% (4 tasks @ 70%)**, with ~+7%
+  typical at 3–4 tasks and 60–90% MPS; 2 tasks is flat (~1.0×) and low MPS% caps
+  *hurt* (throttling under-uses the GPU). The gain is small because AP26 is nearly
+  GPU-saturated solo — far less headroom than small-GFN genefer workloads
+  (which reach ~2.8×).
 
 See **[`cuda/README.md`](cuda/README.md)** for the port design, the fatbin
 scheme, and full results.

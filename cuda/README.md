@@ -78,10 +78,21 @@ one-time startup cancels) over identical K-work:
 - **CUDA vs OpenCL, 1×:** ~parity. CUDA `0.98×` (−1.8%, within run-to-run noise);
   output byte-identical. The sieve is compute/ALU-bound (V100: 100% compute, ~1%
   memory) so both backends saturate the GPU.
-- **Multiple tasks/GPU under CUDA MPS:** no benefit — aggregate throughput
-  `0.92×` (2 tasks) / `0.83×` (3 tasks). A saturated, compute-bound workload gains
-  nothing from concurrency; it only adds contention. (Small-GFN genefer workloads
-  under-utilize the GPU and *do* gain from MPS; AP26 does not.)
+- **Multiple tasks/GPU under CUDA MPS:** a modest gain. Full grid (concurrency
+  2–4 × MPS active-thread-% 30–100), aggregate-throughput speedup vs 1 task,
+  identical per-task workload, startup-corrected:
+
+  | C \ MPS% | 30 | 40 | 50 | 60 | 70 | 80 | 90 | 100 |
+  |---|---|---|---|---|---|---|---|---|
+  | 2 | 0.62 | 0.83 | 1.01 | 1.01 | 1.01 | 1.01 | 1.01 | 1.00 |
+  | 3 | 0.93 | 1.01 | 1.02 | 1.04 | 1.06 | 1.06 | 1.07 | 1.01 |
+  | 4 | 1.00 | 1.03 | 1.02 | 1.06 | **1.12** | 1.07 | 1.07 | 1.07 |
+
+  Best **+12% at 4 tasks @ 70%**; ~+7% typical at 3–4 tasks / 60–90%; 2 tasks
+  flat; low MPS% caps *hurt* (each task starved of SMs). nvidia-smi's solo
+  "100% utilization" hides latency gaps that 3–4 concurrent tasks fill — the
+  effect is real but small (AP26 is near-saturated; small-GFN genefer reaches
+  ~2.8× because it under-utilizes the GPU). Reproduce with `ap26-mps-sweep.sh`.
 
 ## Notes
 
