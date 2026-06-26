@@ -1,0 +1,14 @@
+# generated kernel source-string headers (cltoh.pl from kernels/*.cu)
+kernels/*.h
+# fatbin build outputs
+fatbins.s
+fatbins.h
+fatbins_build/
+# objects + built binaries
+*.o
+ap27_linux64_cuda
+ap27_linux64_cuda_nvrtc
+# runtime state / output (from local test runs)
+AP26-state*.txt
+SOL-AP26.txt
+init_data.xml
