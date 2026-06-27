@@ -767,36 +767,54 @@ int main(int argc, char *argv[])
 		        sieve = sclGetCLSoftware(sieve_cl,"sieve",hardware, 1);
 		}
 
-		// Shared/L1 carveout for the cached sieve. Computed PER DEVICE so it pins the
-		// most blocks/SM the GPU can actually run, giving the rest to L1:
-		// (the driver rounds the % up to a legal shared tier; L1 = unified - shared):
-		//   V100  (2048 thr/SM, 96KB)  -> 2 blocks of 1024 -> ~53% -> 64KB shared / 64KB L1
-		//   sm_86 (1536 thr/SM, 100KB) -> only 1 block fits -> ~25% -> 32KB shared / 96KB L1
-		// A fixed value (was hard-coded 67) wastes L1 everywhere: 67% rounds into the
-		// top shared tier (96KB on V100, 100KB on sm_86), starving L1 to 32/28KB even
-		// though only 25KB of shared is used. Override with AP26_CARVEOUT.
+		// Shared/L1 carveout for the cached sieve. The shared cache trades L1 capacity
+		// for a 2nd resident block, and which side wins is HARDWARE-SPECIFIC -- it
+		// hinges on whether the SM has the unified-memory headroom to fit 2 blocks AND
+		// keep L1 large:
+		//   V100 (sm_70): 128KB unified -> 2 blocks = 64KB shared / 64KB L1 -> +10%;
+		//                 the extra block beats the L1 it costs. MEASURED.
+		//   A100 (sm_80): 192KB unified -> 2 blocks = 64KB shared / 128KB L1 -> the 2nd
+		//                 block keeps a generous L1 (unlike sm_86), so it should win
+		//                 like the V100. REASONED (no A100 on hand to measure).
+		//   consumer Ampere (RTX 3070 Ti / sm_86): only 128KB unified -> a 2nd block
+		//                 drops L1 96KB->64KB and REGRESSES ~10%; max L1 (1 block) wins. MEASURED.
+		// So default to MAX L1 (carveout 0: the cache stays -- the driver rounds up to
+		// the smallest shared tier that fits it -- but L1 gets the rest; never worse
+		// than OpenCL) and only block-pin on the datacenter parts with headroom for it.
+		// Override either way with AP26_CARVEOUT.
 		{ const char *cv = getenv("AP26_CARVEOUT");
-		  int carveout;
+		  int carveout = 0;   // default: max L1
 		  if(cv){
 		    carveout = atoi(cv);
 		  } else {
-		    int maxThr = 2048, maxRegs = 65536, maxSh = 98304, shBlk = 0, regs = 32;
-		    cuDeviceGetAttribute(&maxThr,  CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR,    hardware.device);
-		    cuDeviceGetAttribute(&maxRegs, CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_MULTIPROCESSOR,  hardware.device);
-		    cuDeviceGetAttribute(&maxSh,   CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_MULTIPROCESSOR, hardware.device);
-		    cuFuncGetAttribute(&shBlk, CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, sieve.kernel);
-		    cuFuncGetAttribute(&regs,  CU_FUNC_ATTRIBUTE_NUM_REGS,          sieve.kernel);
-		    int thr  = (int)sieve.local_size[0];
-		    int bThr = thr > 0          ? maxThr  / thr          : 1;
-		    int bReg = (thr*regs) > 0   ? maxRegs / (thr*regs)   : 1;
-		    int blocks = (bThr < bReg ? bThr : bReg);
-		    if(blocks < 1) blocks = 1;
-		    long want = (long)blocks * (shBlk > 0 ? shBlk : 25584);
-		    carveout = (maxSh > 0) ? (int)((want*100 + maxSh - 1) / maxSh) : 67;   // ceil
-		    if(carveout < 1)   carveout = 1;
-		    if(carveout > 100) carveout = 100;
-		    fprintf(stderr, "sieve carveout = %d%% (%d block(s)/SM; %d B shared/block; %d KB shared/SM cap)\n",
-		            carveout, blocks, shBlk, maxSh/1024);
+		    int major = 0, minor = 0;
+		    cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, hardware.device);
+		    cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, hardware.device);
+		    if( (major == 7 && minor == 0) ||     // V100 (sm_70), measured
+		        (major == 8 && minor == 0) ){     // A100 (sm_80), reasoned: 192KB unified keeps 128KB L1
+		      // Reserve enough shared to keep the max blocks/SM resident.
+		      int maxThr = 2048, maxRegs = 65536, maxSh = 98304, shBlk = 0, regs = 32;
+		      cuDeviceGetAttribute(&maxThr,  CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR,      hardware.device);
+		      cuDeviceGetAttribute(&maxRegs, CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_MULTIPROCESSOR,    hardware.device);
+		      cuDeviceGetAttribute(&maxSh,   CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_MULTIPROCESSOR, hardware.device);
+		      cuFuncGetAttribute(&shBlk, CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, sieve.kernel);
+		      cuFuncGetAttribute(&regs,  CU_FUNC_ATTRIBUTE_NUM_REGS,          sieve.kernel);
+		      int thr  = (int)sieve.local_size[0];
+		      int bThr = thr > 0          ? maxThr  / thr          : 1;
+		      int bReg = (thr*regs) > 0   ? maxRegs / (thr*regs)   : 1;
+		      int blocks = (bThr < bReg ? bThr : bReg);
+		      if(blocks < 1) blocks = 1;
+		      long want = (long)blocks * (shBlk > 0 ? shBlk : 25584);
+		      carveout = (maxSh > 0) ? (int)((want*100 + maxSh - 1) / maxSh) : 53;   // ceil
+		      if(carveout < 1)   carveout = 1;
+		      if(carveout > 100) carveout = 100;
+		      fprintf(stderr, "sieve carveout = %d%% (cc %d.%d: %d block(s)/SM block-pinned)\n",
+		              carveout, major, minor, blocks);
+		    } else {
+		      // Everything else: max L1 (verified best on sm_86; safe default elsewhere).
+		      carveout = 0;
+		      fprintf(stderr, "sieve carveout = 0%% (cc %d.%d: max L1, not block-pinned)\n", major, minor);
+		    }
 		  }
 		  cuFuncSetAttribute(sieve.kernel, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT, carveout);
 		}
