@@ -769,10 +769,12 @@ int main(int argc, char *argv[])
 
 		// Shared/L1 carveout for the cached sieve. Computed PER DEVICE so it pins the
 		// most blocks/SM the GPU can actually run, giving the rest to L1:
-		//   V100  (2048 thr/SM, 96KB)  -> 2 blocks of 1024 -> ~53% (64KB shared/32KB L1)
-		//   sm_86 (1536 thr/SM, 100KB) -> only 1 block fits -> ~25% (25KB shared/max L1)
-		// A fixed value (was hard-coded 67, V100-tuned) wastes L1 on GPUs that can't
-		// reach 2 blocks (e.g. Ampere consumer). Override with AP26_CARVEOUT.
+		// (the driver rounds the % up to a legal shared tier; L1 = unified - shared):
+		//   V100  (2048 thr/SM, 96KB)  -> 2 blocks of 1024 -> ~53% -> 64KB shared / 64KB L1
+		//   sm_86 (1536 thr/SM, 100KB) -> only 1 block fits -> ~25% -> 32KB shared / 96KB L1
+		// A fixed value (was hard-coded 67) wastes L1 everywhere: 67% rounds into the
+		// top shared tier (96KB on V100, 100KB on sm_86), starving L1 to 32/28KB even
+		// though only 25KB of shared is used. Override with AP26_CARVEOUT.
 		{ const char *cv = getenv("AP26_CARVEOUT");
 		  int carveout;
 		  if(cv){
