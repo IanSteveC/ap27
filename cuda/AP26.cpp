@@ -767,11 +767,37 @@ int main(int argc, char *argv[])
 		        sieve = sclGetCLSoftware(sieve_cl,"sieve",hardware, 1);
 		}
 
-		// force shared/L1 carveout to pin 2 blocks/SM for the cached sieve (sweep)
-		// Pin 2 blocks/SM for the shared-cached sieve: force a 64KB shared / 32KB L1
-		// carveout (the driver otherwise picks inconsistently -> ~2x slowdowns).
+		// Shared/L1 carveout for the cached sieve. Computed PER DEVICE so it pins the
+		// most blocks/SM the GPU can actually run, giving the rest to L1:
+		//   V100  (2048 thr/SM, 96KB)  -> 2 blocks of 1024 -> ~53% (64KB shared/32KB L1)
+		//   sm_86 (1536 thr/SM, 100KB) -> only 1 block fits -> ~25% (25KB shared/max L1)
+		// A fixed value (was hard-coded 67, V100-tuned) wastes L1 on GPUs that can't
+		// reach 2 blocks (e.g. Ampere consumer). Override with AP26_CARVEOUT.
 		{ const char *cv = getenv("AP26_CARVEOUT");
-		  cuFuncSetAttribute(sieve.kernel, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT, cv ? atoi(cv) : 67); }
+		  int carveout;
+		  if(cv){
+		    carveout = atoi(cv);
+		  } else {
+		    int maxThr = 2048, maxRegs = 65536, maxSh = 98304, shBlk = 0, regs = 32;
+		    cuDeviceGetAttribute(&maxThr,  CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_MULTIPROCESSOR,    hardware.device);
+		    cuDeviceGetAttribute(&maxRegs, CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_MULTIPROCESSOR,  hardware.device);
+		    cuDeviceGetAttribute(&maxSh,   CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_MULTIPROCESSOR, hardware.device);
+		    cuFuncGetAttribute(&shBlk, CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, sieve.kernel);
+		    cuFuncGetAttribute(&regs,  CU_FUNC_ATTRIBUTE_NUM_REGS,          sieve.kernel);
+		    int thr  = (int)sieve.local_size[0];
+		    int bThr = thr > 0          ? maxThr  / thr          : 1;
+		    int bReg = (thr*regs) > 0   ? maxRegs / (thr*regs)   : 1;
+		    int blocks = (bThr < bReg ? bThr : bReg);
+		    if(blocks < 1) blocks = 1;
+		    long want = (long)blocks * (shBlk > 0 ? shBlk : 25584);
+		    carveout = (maxSh > 0) ? (int)((want*100 + maxSh - 1) / maxSh) : 67;   // ceil
+		    if(carveout < 1)   carveout = 1;
+		    if(carveout > 100) carveout = 100;
+		    fprintf(stderr, "sieve carveout = %d%% (%d block(s)/SM; %d B shared/block; %d KB shared/SM cap)\n",
+		            carveout, blocks, shBlk, maxSh/1024);
+		  }
+		  cuFuncSetAttribute(sieve.kernel, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT, carveout);
+		}
 
 
 #ifdef _WIN32
