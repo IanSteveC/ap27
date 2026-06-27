@@ -39,9 +39,15 @@ for both the NVRTC and the AOT (driver-only) binaries.
 
 ## Performance (Tesla V100, vs the upstream OpenCL app)
 
-- **1× throughput: parity** — CUDA is within ~2% of OpenCL, and the output is
-  byte-identical. The AP26 sieve is compute/ALU-bound and both backends saturate
-  the V100, so there is no headroom for CUDA to pull ahead.
+- **Optimized CUDA is ~10% faster than OpenCL.** The sieve kernel (96% of GPU
+  time) is L1-cache *gather*-bound (scattered `OKOK[]` lookups, not DRAM- or
+  compute-bound). The optimized build caches the hot prime rows in shared memory
+  — crucially *keeping* the per-group early-out short-circuit — and pins 2
+  blocks/SM via the shared/L1 carveout. On a **real 124-K work unit**, full
+  bit-identical output: OpenCL **241 s**, first-cut CUDA **245 s** (a plain
+  translation is ~at parity), **optimized CUDA 220 s** (+11% over the first cut,
+  +10% over OpenCL). See [`cuda/README.md`](cuda/README.md) for the profiling and
+  the levers tried (and the dead-ends, e.g. caching *all* primes is slower).
 - **Multiple tasks per GPU (CUDA MPS): a modest gain.** A full sweep
   (concurrency 2–4 × MPS% 30–100) peaks at **+12% (4 tasks @ 70%)**, with ~+7%
   typical at 3–4 tasks and 60–90% MPS; 2 tasks is flat (~1.0×) and low MPS% caps

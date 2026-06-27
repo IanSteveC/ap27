@@ -70,14 +70,35 @@ a byte-for-byte match certifies the whole search (solutions + checksum) is
 identical to the original app. All four cases pass on a Tesla V100 for both
 builds.
 
-## Performance (Tesla V100)
+## Sieve optimization (the `sieve` kernel = 96% of GPU time)
 
-Measured with a difference method (large-range minus small-range wall-clock, so
-one-time startup cancels) over identical K-work:
+Profiling (`ncu`) shows the sieve is **L1-cache gather-throughput-bound** (L1/TEX
+90%, DRAM 0.5%, ~56% excessive sectors from the scattered `OKOK[(n59a+k·n59b)%p]`
+lookups) — *not* DRAM- or compute-bound. The optimization:
 
-- **CUDA vs OpenCL, 1×:** ~parity. CUDA `0.98×` (−1.8%, within run-to-run noise);
-  output byte-identical. The sieve is compute/ALU-bound (V100: 100% compute, ~1%
-  memory) so both backends saturate the GPU.
+- **Cache the hottest prime rows in shared memory.** The first ~26 primes (≤191,
+  3198 entries ≈ 25 KB) are evaluated by every thread (the rest are early-out
+  gated to ~13%/2%), so they dominate L1 traffic. They are staged into `__shared__`
+  and read from there, offloading the L1 gather pressure.
+- **Keep the early-out short-circuit.** This is what the upstream `sieve_nv` got
+  wrong — it ANDs all cached primes in one expression (no early-out → ~37 gathers
+  every time) and is *slower*. Keeping the per-group `if(sito &= …)` chain means
+  most threads do only ~5–10 gathers.
+- **Pin 2 blocks/SM** via `cuFuncSetAttribute(…PREFERRED_SHARED_MEMORY_CARVEOUT,67)`
+  — a 64 KB shared / 32 KB L1 split. Without forcing it the driver picks the
+  carveout inconsistently → random ~2× slowdowns; >~28 KB of cache also tips off
+  the 2-block cliff, so 25 KB is the sweet spot.
+
+Result on a **real 124-K work unit** (`457248768 457248891 1280`, full WU,
+bit-identical output): OpenCL **241 s**, first-cut CUDA **245 s**, **optimized
+CUDA 220 s** — **+11% over the first cut, +10% over OpenCL**. Dead-ends (measured):
+caching *all* 38 primes (`sieve_nv` style) is +13% *slower*; `__launch_bounds__`,
+bigger caches past the cliff, and forced 96 KB carveout all regress.
+
+## Performance vs OpenCL / MPS (Tesla V100)
+
+- **CUDA vs OpenCL, 1×:** first-cut translation ~parity (`0.98×`); the **optimized
+  sieve makes it +10% faster than OpenCL** (see above). Output byte-identical.
 - **Multiple tasks/GPU under CUDA MPS:** a modest gain. Full grid (concurrency
   2–4 × MPS active-thread-% 30–100), aggregate-throughput speedup vs 1 task,
   identical per-task workload, startup-corrected:

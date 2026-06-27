@@ -202,8 +202,10 @@ static inline sclSoft sclGetCLSoftware(const char * source, const char * name, s
 	nvrtcProgram prog;
 	_sclNVRTC(nvrtcCreateProgram(&prog, source, name, 0, NULL, NULL), "nvrtcCreateProgram");
 
-	const char * opts[] = { arch };
-	nvrtcResult cres = nvrtcCompileProgram(prog, 1, opts);
+	const char * opts[3]; int nopts = 0;
+	opts[nopts++] = arch;
+	if (getenv("AP26_LINEINFO")) opts[nopts++] = "--generate-line-info";  // ncu source correlation
+	nvrtcResult cres = nvrtcCompileProgram(prog, nopts, opts);
 	if (cres != NVRTC_SUCCESS) {
 		size_t logSize = 0;
 		nvrtcGetProgramLogSize(prog, &logSize);

@@ -12,9 +12,18 @@ __constant__ int halfn59s = 68687660;
 __constant__ unsigned long long MOD = (unsigned long long)258559632607830;
 
 
-extern "C" __global__ void sieve(unsigned long long * n59g, unsigned long long S59, int shift, unsigned long long * n_result, unsigned long long * OKOK, int * counter, int offset){
+extern "C" __global__ void sieve(const unsigned long long * __restrict__ n59g, unsigned long long S59, int shift, unsigned long long * __restrict__ n_result, const unsigned long long * __restrict__ OKOK, int * __restrict__ counter, int offset){
 
 	int idx = (blockIdx.x*blockDim.x + threadIdx.x) + offset;
+
+	__shared__ unsigned long long localOK[3198];
+	{ int q = threadIdx.x;
+	  localOK[q] = OKOK[q];
+	  localOK[q + 1024] = OKOK[q + 1024];
+	  localOK[q + 2048] = OKOK[q + 2048];
+	  if(q < 126) localOK[q + 3072] = OKOK[q + 3072];
+	}
+	__syncthreads();
 
 	if(idx < halfn59s){
 
@@ -26,32 +35,32 @@ extern "C" __global__ void sieve(unsigned long long * n59g, unsigned long long S
 			unsigned int n59a = n59 & ((1<<30)-1);
 			unsigned int n59b = n59 >> 30;
 
-			if((sito  = OKOK[ (n59a+60*n59b)%61 ]
-				& OKOK[ ((n59a+25*n59b)%67) + 61 ]
-				& OKOK[ ((n59a+20*n59b)%71) + 128 ]
-				& OKOK[ ((n59a+8*n59b)%73) + 199 ]
-				& OKOK[ ((n59a+52*n59b)%79) + 272 ]) )
-			if(sito &= OKOK[ ((n59a+40*n59b)%83) + 351 ]
-				& OKOK[ ((n59a+78*n59b)%89) + 434 ]
-				& OKOK[ ((n59a+33*n59b)%97) + 523 ]
-				& OKOK[ ((n59a+17*n59b)%101) + 620 ]
-				& OKOK[ ((n59a+93*n59b)%103) + 721 ] )
-			if(sito &= OKOK[ ((n59a+34*n59b)%107) + 824 ]
-				& OKOK[ ((n59a+46*n59b)%109) + 931 ]
-				& OKOK[ ((n59a+4*n59b)%113) + 1040 ]
-				& OKOK[ ((n59a+4*n59b)%127) + 1153 ]
-				& OKOK[ ((n59a+62*n59b)%131) + 1280 ] )
-			if(sito &= OKOK[ ((n59a+77*n59b)%137) + 1411 ]
-				& OKOK[ ((n59a+45*n59b)%139) + 1548 ]
-				& OKOK[ ((n59a+144*n59b)%149) + 1687 ]
-				& OKOK[ ((n59a+n59b)%151) + 1836 ] )
-			if(sito &= OKOK[ ((n59a+141*n59b)%157) + 1987 ]
-				& OKOK[ ((n59a+25*n59b)%163) + 2144 ]
-				& OKOK[ ((n59a+127*n59b)%167) + 2307 ]
-				& OKOK[ ((n59a+24*n59b)%173) + 2474 ] )
-			if(sito &= OKOK[ ((n59a+121*n59b)%179) + 2647 ]
-				& OKOK[ ((n59a+49*n59b)%181) + 2826 ])
-			if(sito &= OKOK[ ((n59a+180*n59b)%191) + 3007 ]
+			if((sito  = localOK[ (n59a+60*n59b)%61 ]
+				& localOK[ ((n59a+25*n59b)%67) + 61 ]
+				& localOK[ ((n59a+20*n59b)%71) + 128 ]
+				& localOK[ ((n59a+8*n59b)%73) + 199 ]
+				& localOK[ ((n59a+52*n59b)%79) + 272 ]) )
+			if(sito &= localOK[ ((n59a+40*n59b)%83) + 351 ]
+				& localOK[ ((n59a+78*n59b)%89) + 434 ]
+				& localOK[ ((n59a+33*n59b)%97) + 523 ]
+				& localOK[ ((n59a+17*n59b)%101) + 620 ]
+				& localOK[ ((n59a+93*n59b)%103) + 721 ] )
+			if(sito &= localOK[ ((n59a+34*n59b)%107) + 824 ]
+				& localOK[ ((n59a+46*n59b)%109) + 931 ]
+				& localOK[ ((n59a+4*n59b)%113) + 1040 ]
+				& localOK[ ((n59a+4*n59b)%127) + 1153 ]
+				& localOK[ ((n59a+62*n59b)%131) + 1280 ] )
+			if(sito &= localOK[ ((n59a+77*n59b)%137) + 1411 ]
+				& localOK[ ((n59a+45*n59b)%139) + 1548 ]
+				& localOK[ ((n59a+144*n59b)%149) + 1687 ]
+				& localOK[ ((n59a+n59b)%151) + 1836 ] )
+			if(sito &= localOK[ ((n59a+141*n59b)%157) + 1987 ]
+				& localOK[ ((n59a+25*n59b)%163) + 2144 ]
+				& localOK[ ((n59a+127*n59b)%167) + 2307 ]
+				& localOK[ ((n59a+24*n59b)%173) + 2474 ] )
+			if(sito &= localOK[ ((n59a+121*n59b)%179) + 2647 ]
+				& localOK[ ((n59a+49*n59b)%181) + 2826 ])
+			if(sito &= localOK[ ((n59a+180*n59b)%191) + 3007 ]
 				& OKOK[ ((n59a+27*n59b)%193) + 3198 ])
 			if(sito &= OKOK[ ((n59a+22*n59b)%197) + 3391 ]
 				& OKOK[ ((n59a+111*n59b)%199) + 3588 ])

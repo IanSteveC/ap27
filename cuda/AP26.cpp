@@ -745,27 +745,33 @@ int main(int argc, char *argv[])
 			ccmajor = (cl_uint)major;
 		}
 
-		if(ccmajor < 7){
-			// older nvidia gpus
-		        printf("compiling sieve for NVIDIA with local mem cache\n");
+		// AP26_SIEVE env override ("nv" = shared-mem cache variant, "std" = all-global)
+		// lets us A/B the two sieve kernels on any GPU; default = cc-based heuristic.
+		const char *sieveOverride = getenv("AP26_SIEVE");
+		bool useNV = (ccmajor < 7);
+		if(sieveOverride){ useNV = (strcmp(sieveOverride, "nv") == 0); }
+
+		if(useNV){
+		        printf("compiling sieve_nv (shared/local mem cache)\n");
 		        sieve = sclGetCLSoftware(sieve_nv_cl,"sieve",hardware, 1);
 
-			// kernel has __attribute__ ((reqd_work_group_size(1024, 1, 1)))
-			// Nvidia's 4xx.x drivers changed CL_KERNEL_WORK_GROUP_SIZE return value to 256
-			// this kernel runs much quicker (33%+) at 1024 because of the local memory copy
-			// hack around nvidia's driver change
+			// sieve_nv's local-memory copy assumes exactly 1024 threads/block
 			if(sieve.local_size[0] != 1024){
 				sieve.local_size[0] = 1024;
 				fprintf(stderr, "Set sieve kernel local size to 1024\n");
 				printf("Set sieve kernel local size to 1024\n");
 			}
-
 		}
 		else{
-			// current gpus with big L2 cache
-		        printf("compiling sieve\n");
+		        printf("compiling sieve (global)\n");
 		        sieve = sclGetCLSoftware(sieve_cl,"sieve",hardware, 1);
 		}
+
+		// force shared/L1 carveout to pin 2 blocks/SM for the cached sieve (sweep)
+		// Pin 2 blocks/SM for the shared-cached sieve: force a 64KB shared / 32KB L1
+		// carveout (the driver otherwise picks inconsistently -> ~2x slowdowns).
+		{ const char *cv = getenv("AP26_CARVEOUT");
+		  cuFuncSetAttribute(sieve.kernel, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT, cv ? atoi(cv) : 67); }
 
 
 #ifdef _WIN32
