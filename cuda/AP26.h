@@ -176,7 +176,8 @@ void SearchAP26(int K, int startSHIFT, int & profile, uint32_t CU, int COMPUTE)
 
 		// clearokok kernel
 		sclSetKernelArg(clearokok, 0, sizeof(cl_mem), &OKOK_d);
-		sclEnqueueKernel(hardware, clearokok);
+		// clearokok dropped: setupokok writes every OKOK slot once (=)
+		// sclEnqueueKernel(hardware, clearokok);
 		// end clearokok
 
 		// setupokok kernel
@@ -252,7 +253,8 @@ void SearchAP26(int K, int startSHIFT, int & profile, uint32_t CU, int COMPUTE)
 
 	for(; SHIFT<(startSHIFT+640); SHIFT+=64){
 
-		sclEnqueueKernel(hardware, clearokok);
+		// clearokok dropped: setupokok writes every OKOK slot once (=)
+		// sclEnqueueKernel(hardware, clearokok);
 
 		sclSetKernelArg(setupokok, 0, sizeof(int), &SHIFT);
 		sclEnqueueKernel(hardware, setupokok);

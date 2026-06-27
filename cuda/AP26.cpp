@@ -886,7 +886,7 @@ int main(int argc, char *argv[])
 	sclSetGlobalSize( clearok, 23693 );
 	sclSetGlobalSize( setupn, 10840 );
 	sclSetGlobalSize( offset, 542 );
-	sclSetGlobalSize( setupokok, 542 );
+	sclSetGlobalSize( setupokok, 83*542 );	// parallelized: one thread per (prime,residue) row
 	sclSetGlobalSize( setupok, 542 );
 
 
