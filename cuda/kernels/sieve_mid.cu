@@ -1,7 +1,13 @@
 /*
 
-	sieve kernel
+	sieve kernel - REDUCED shared cache variant ("mid")
 
+	Identical to sieve.cu except only the primes <= 131 (15 primes, 1411
+	entries = 11288 B) are cached in shared memory; 137..541 read global
+	OKOK through L1. The small footprint lets TWO blocks fit the 32KB
+	shared tier on 1536-thread/SM GPUs (consumer Ampere/Ada/Blackwell,
+	block=768): 100% occupancy AND ~96KB L1 simultaneously - a combination
+	the full 25.5KB cache cannot reach there. Bit-exact with sieve.cu.
 
 	fast 32 bit mod fails at approximately 2^54 which will never be reached
 	because n59 does not exceed 2^48
@@ -16,9 +22,9 @@ extern "C" __global__ void sieve(const unsigned long long * __restrict__ n59g, u
 
 	int idx = (blockIdx.x*blockDim.x + threadIdx.x) + offset;
 
-	__shared__ unsigned long long localOK[3198];
+	__shared__ unsigned long long localOK[1411];
 	// blockDim-agnostic copy (block size is tunable per arch via AP26_BLOCK)
-	for(int q = threadIdx.x; q < 3198; q += blockDim.x){
+	for(int q = threadIdx.x; q < 1411; q += blockDim.x){
 		localOK[q] = OKOK[q];
 	}
 	__syncthreads();
@@ -48,17 +54,17 @@ extern "C" __global__ void sieve(const unsigned long long * __restrict__ n59g, u
 				& localOK[ ((n59a+4*n59b)%113) + 1040 ]
 				& localOK[ ((n59a+4*n59b)%127) + 1153 ]
 				& localOK[ ((n59a+62*n59b)%131) + 1280 ] )
-			if(sito &= localOK[ ((n59a+77*n59b)%137) + 1411 ]
-				& localOK[ ((n59a+45*n59b)%139) + 1548 ]
-				& localOK[ ((n59a+144*n59b)%149) + 1687 ]
-				& localOK[ ((n59a+n59b)%151) + 1836 ] )
-			if(sito &= localOK[ ((n59a+141*n59b)%157) + 1987 ]
-				& localOK[ ((n59a+25*n59b)%163) + 2144 ]
-				& localOK[ ((n59a+127*n59b)%167) + 2307 ]
-				& localOK[ ((n59a+24*n59b)%173) + 2474 ] )
-			if(sito &= localOK[ ((n59a+121*n59b)%179) + 2647 ]
-				& localOK[ ((n59a+49*n59b)%181) + 2826 ])
-			if(sito &= localOK[ ((n59a+180*n59b)%191) + 3007 ]
+			if(sito &= OKOK[ ((n59a+77*n59b)%137) + 1411 ]
+				& OKOK[ ((n59a+45*n59b)%139) + 1548 ]
+				& OKOK[ ((n59a+144*n59b)%149) + 1687 ]
+				& OKOK[ ((n59a+n59b)%151) + 1836 ] )
+			if(sito &= OKOK[ ((n59a+141*n59b)%157) + 1987 ]
+				& OKOK[ ((n59a+25*n59b)%163) + 2144 ]
+				& OKOK[ ((n59a+127*n59b)%167) + 2307 ]
+				& OKOK[ ((n59a+24*n59b)%173) + 2474 ] )
+			if(sito &= OKOK[ ((n59a+121*n59b)%179) + 2647 ]
+				& OKOK[ ((n59a+49*n59b)%181) + 2826 ])
+			if(sito &= OKOK[ ((n59a+180*n59b)%191) + 3007 ]
 				& OKOK[ ((n59a+27*n59b)%193) + 3198 ])
 			if(sito &= OKOK[ ((n59a+22*n59b)%197) + 3391 ]
 				& OKOK[ ((n59a+111*n59b)%199) + 3588 ])
@@ -152,6 +158,3 @@ extern "C" __global__ void sieve(const unsigned long long * __restrict__ n59g, u
 	}
 
 }
-
-
-

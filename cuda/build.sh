@@ -28,7 +28,7 @@ for a in "$@"; do
 done
 
 CXX=g++
-KERNELS="checkn clearn clearok clearokok offset setupn setupok setupokok sieve sieve_nv"
+KERNELS="checkn clearn clearok clearokok offset setupn setupok setupokok sieve sieve_ilp2 sieve_mid sieve_nv"
 
 # 1. embed kernel sources as C strings (var <name>_cl, same names the host uses)
 echo "[cltoh] generating kernel source headers"

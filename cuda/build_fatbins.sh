@@ -17,7 +17,7 @@ cd "$(dirname "$0")"
 CUDA="${CUDA:-/usr/local/cuda-12.9}"
 NVCC="$CUDA/bin/nvcc"; PTXAS="$CUDA/bin/ptxas"; FATBINARY="$CUDA/bin/fatbinary"
 
-KERNELS="checkn clearn clearok clearokok offset setupn setupok setupokok sieve sieve_nv"
+KERNELS="checkn clearn clearok clearokok offset setupn setupok setupokok sieve sieve_ilp2 sieve_mid sieve_nv"
 # directly nvcc-compilable arches (Maxwell -> Hopper)
 ARCHES_DIRECT="${ARCHES_DIRECT:-50 52 60 61 70 75 80 86 89 90}"
 # Blackwell: compute_89 PTX -> ptxas to the sm_NNNf family target (genefer scheme)
@@ -36,6 +36,18 @@ for k in $KERNELS; do
     cub="$TMP/${k}_sm${a}.cubin"
     if "$NVCC" -gencode "arch=compute_${a},code=sm_${a}" --cubin "$cu" -o "$cub" 2>"$ERR"; then
       imgs+=(--image3="kind=elf,sm=${a},file=${cub}")
+      # occupancy guard: the sieve variants sit on per-arch register knife-edges
+      # (sm_70 2x1024 blocks need <=32 regs; sm_86/89 768x2=1536 thr need <=42).
+      # Fail loudly if compiler/source drift ever pushes past the budget.
+      case "$k" in sieve|sieve_mid|sieve_ilp2)
+        budget=""; [ "$a" = 70 ] && budget=32; { [ "$a" = 86 ] || [ "$a" = 89 ]; } && budget=42
+        if [ -n "$budget" ]; then
+          regs=$("$CUDA/bin/cuobjdump" --dump-resource-usage "$cub" 2>/dev/null | grep -oP 'REG:\K[0-9]+' | head -1)
+          if [ -n "$regs" ] && [ "$regs" -gt "$budget" ]; then
+            echo "  !! $k sm_$a uses $regs registers (> $budget budget: occupancy cliff)"; exit 1
+          fi
+        fi
+      ;; esac
     else
       echo "  !! $k sm_$a failed: $(tail -1 "$ERR")"
     fi

@@ -160,16 +160,16 @@ void SearchAP26(int K, int startSHIFT, int & profile, uint32_t CU, int COMPUTE)
 		// calculate approximate chunk size based on gpu's CU
 		uint64_t multiplier = 200000;
 		uint64_t worksize = CU * multiplier;
-		if(worksize > halfn59s){
-			worksize = halfn59s;
+		if(worksize > halfn59s/sieve_wpt){
+			worksize = halfn59s/sieve_wpt;
 		}
 
 		sclSetGlobalSize( sieve, worksize );
 
 		uint64_t estimated = sieve.global_size[0];
 
-		// set n result array size
-		numn = sieve.global_size[0] / 2;
+		// set n result array size (a launch covers sieve_wpt * global_size words)
+		numn = (sieve.global_size[0] * sieve_wpt) / 2;
 
 		// allocate
 		n_result_d = sclMalloc(hardware, CL_MEM_READ_WRITE, numn * sizeof(uint64_t));
@@ -208,15 +208,15 @@ void SearchAP26(int K, int startSHIFT, int & profile, uint32_t CU, int COMPUTE)
 		double multi = COMPUTE?(100.0 / kernel_ms):(10.0 / kernel_ms);
 
 		uint64_t new_range = (uint64_t)((double)sieve.global_size[0] * multi);
-		if(new_range > halfn59s){
-			new_range = halfn59s;
+		if(new_range > halfn59s/sieve_wpt){
+			new_range = halfn59s/sieve_wpt;
 		}
 
 		sclSetGlobalSize( sieve, new_range );
 
-		// adjust n result array size
+		// adjust n result array size (a launch covers sieve_wpt * global_size words)
 		sclReleaseMemObject(n_result_d);
-		numn = sieve.global_size[0] / 2;
+		numn = (sieve.global_size[0] * sieve_wpt) / 2;
 		n_result_d = sclMalloc(hardware, CL_MEM_READ_WRITE, numn * sizeof(uint64_t));
 
 		sclSetGlobalSize( checkn, numn );
@@ -260,7 +260,8 @@ void SearchAP26(int K, int startSHIFT, int & profile, uint32_t CU, int COMPUTE)
 		sclEnqueueKernel(hardware, setupokok);
 
 		for(int devicearray=0; devicearray<2; devicearray++){
-			for(int p=0; p<halfn59s; p+=sieve.global_size[0] ){
+			// p is in THREAD units; each launch covers sieve_wpt*global_size words
+			for(int p=0; p<halfn59s/sieve_wpt; p+=sieve.global_size[0] ){
 
 				if(iter == 3){
 					// sleep cpu while waiting on iter 0 kernel launch event to complete

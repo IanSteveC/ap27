@@ -84,16 +84,38 @@ lookups) — *not* DRAM- or compute-bound. The optimization:
   wrong — it ANDs all cached primes in one expression (no early-out → ~37 gathers
   every time) and is *slower*. Keeping the per-group `if(sito &= …)` chain means
   most threads do only ~5–10 gathers.
-- **Pin 2 blocks/SM** via `cuFuncSetAttribute(…PREFERRED_SHARED_MEMORY_CARVEOUT,67)`
-  — a 64 KB shared / 32 KB L1 split. Without forcing it the driver picks the
-  carveout inconsistently → random ~2× slowdowns; >~28 KB of cache also tips off
-  the 2-block cliff, so 25 KB is the sweet spot.
+- **Fill the SM's thread ceiling** (measured on V100 + 7 GeForce cards,
+  Turing→Blackwell, all bit-exact): the winning launch geometry on *every* arch
+  is the block size that exactly fills threads/SM, full cache, leftover memory
+  to L1. The app picks it from the device's attributes at runtime:
+  - 2048 thr/SM (Volta/A100/Hopper/dc-Blackwell) → **2×1024** — V100 **+10%**
+  - 1536 thr/SM (consumer Ampere/Ada/Blackwell) → **2×768** — measured
+    **+8…+12%** vs 1×1024 (3070 Ti +11.1%, 3090 +8.0%, 4070 Ti S +11.7%,
+    5070 +11.0%, 5090 +6.6%)
+  - 1024 thr/SM (Turing) → **1×1024** (already 100%; 768 fits only one block =
+    75% and measures slower: 2080 Ti −2.7%, T600 −4.6%)
+  The carveout then reserves exactly `blocks × 25.5 KB` of shared (driver
+  rounds up to a tier; L1 gets the rest). Without forcing a value the driver
+  picks inconsistently → random ~2× slowdowns. The choice is logged to stderr.
 
 Result on a **real 124-K work unit** (`457248768 457248891 1280`, full WU,
 bit-identical output): OpenCL **241 s**, first-cut CUDA **245 s**, **optimized
 CUDA 220 s** — **+11% over the first cut, +10% over OpenCL**. Dead-ends (measured):
 caching *all* 38 primes (`sieve_nv` style) is +13% *slower*; `__launch_bounds__`,
 bigger caches past the cliff, and forced 96 KB carveout all regress.
+
+### Experiment tunables (env, all bit-exact)
+
+| var | values | effect |
+|---|---|---|
+| `AP26_CARVEOUT` | 0–100 | override the shared/L1 split (driver rounds up to a legal tier) |
+| `AP26_BLOCK` | multiple of 32, ≤1024 | sieve block size; `768` → 2 blocks = 100% occupancy on 1536-thread/SM GPUs (consumer Ampere/Ada/Blackwell, where 1024-thread blocks cap at 67%) |
+| `AP26_SIEVE` | `std` / `mid` / `ilp2` / `nv` | full 25.5 KB cache (default cc≥7) / reduced 11.3 KB cache (2×768 blocks fit the 32 KB shared tier keeping ~96 KB L1) / 2-words-per-thread ILP variant (latency hiding under an occupancy cap; ~2× slower on V100 due to an sm_70 register squeeze — for 1536-thr archs) / legacy cache-all |
+
+`bench_sm86.sh` sweeps the interesting combinations on 1536-thread/SM GPUs and
+bit-exact-checks every run; `build_fatbins.sh` enforces the per-arch register
+budgets (sm_70 ≤32, sm_86/89 ≤42) so compiler drift can't silently fall off an
+occupancy cliff.
 
 ## Performance vs OpenCL / MPS (Tesla V100)
 
