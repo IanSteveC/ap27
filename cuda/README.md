@@ -46,6 +46,10 @@ CUDA one:
 ```sh
 ./build.sh --fatbin      # AOT: ap27_linux64_cuda        (driver-only, shipped)
 ./build.sh               # NVRTC: ap27_linux64_cuda_nvrtc (dev)
+./build_win.sh           # Windows x64 cross-build via MinGW: ap27_win64_cuda.exe
+                         # (same embedded fatbins; BOINC libs cross-built from
+                         #  BOINC's own Makefile.mingw; nvcuda.dll import lib
+                         #  generated from the driver symbols the app uses)
 ```
 
 Environment (defaults shown):

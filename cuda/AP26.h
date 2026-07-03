@@ -5,13 +5,22 @@
  	Jan 10, 2023				*/
 
 
-// Poll a CUDA event until its queued work completes, sleeping 1ms between
-// checks so the CPU is not pinned (BOINC-friendly). Destroys the event.
-void waitOnEvent(sclHard hardware, CUevent event){
-
+// 1ms CPU-yielding sleep (BOINC-friendly polling)
+#ifdef _WIN32
+#include <windows.h>
+static inline void ap26_sleep1ms(void){ Sleep(1); }
+#else
+static inline void ap26_sleep1ms(void){
 	struct timespec sleep_time;
 	sleep_time.tv_sec = 0;
 	sleep_time.tv_nsec = 1000000;	// 1ms
+	nanosleep(&sleep_time,NULL);
+}
+#endif
+
+// Poll a CUDA event until its queued work completes, sleeping 1ms between
+// checks so the CPU is not pinned (BOINC-friendly). Destroys the event.
+void waitOnEvent(sclHard hardware, CUevent event){
 
 	if(event == NULL){
 		return;
@@ -19,7 +28,7 @@ void waitOnEvent(sclHard hardware, CUevent event){
 
 	while(true){
 
-		nanosleep(&sleep_time,NULL);
+		ap26_sleep1ms();
 
 		CUresult r = cuEventQuery(event);
 		if(r == CUDA_SUCCESS){
@@ -41,17 +50,13 @@ void waitOnEvent(sclHard hardware, CUevent event){
 // letting the CPU sleep in between (BOINC-friendly drain).
 void sleepCPU(sclHard hardware){
 
-	struct timespec sleep_time;
-	sleep_time.tv_sec = 0;
-	sleep_time.tv_nsec = 1000000;	// 1ms
-
 	CUevent kernelsDone;
 	cuEventCreate(&kernelsDone, CU_EVENT_DEFAULT);
 	cuEventRecord(kernelsDone, hardware.queue);
 
 	while(true){
 
-		nanosleep(&sleep_time,NULL);
+		ap26_sleep1ms();
 
 		CUresult r = cuEventQuery(kernelsDone);
 		if(r == CUDA_SUCCESS){

@@ -14,3 +14,7 @@ init_data.xml
 # bench_sm86.sh per-config run dirs + test kit tarball
 bench_[A-Z]/
 ap26-sm86-testkit.tar.gz
+# windows cross-build outputs (build_win.sh)
+winlibs/
+ap27_win64_cuda.exe
+ap27-win-test.zip
